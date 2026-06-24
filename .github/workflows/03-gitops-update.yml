@@ -20,7 +20,7 @@ jobs:
           token: ${{ secrets.GITOPS_PAT }}
           path: gitops
 
-      - name: Update backend image tag
+      - name: Update image tags
         run: |
           NEW_TAG="sha-${{ github.event.workflow_run.head_sha }}"
           sed -i "s|tag:.*|tag: \"${NEW_TAG}\"|g" gitops/app/backend/values.yaml
