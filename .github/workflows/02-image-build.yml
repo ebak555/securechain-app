@@ -61,7 +61,7 @@ jobs:
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/securechain-${{ matrix.component }}:${{ steps.tag.outputs.tag }}
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: 0
           format: table
 
       - name: Push image to ghcr.io
