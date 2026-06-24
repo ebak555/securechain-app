@@ -1,0 +1,88 @@
+name: 02 - Build, Scan & Sign Images
+
+on:
+  workflow_run:
+    workflows: ["01 - Code Security Scan"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write  # required for Cosign keyless signing via GitHub OIDC
+
+jobs:
+  build-scan-sign:
+    name: ${{ matrix.component }} — Build → Scan → Sign → Push
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    strategy:
+      matrix:
+        component: [backend, frontend]
+
+    outputs:
+      backend-digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lint Dockerfile with Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: app/${{ matrix.component }}/Dockerfile
+          failure-threshold: warning
+
+      - name: Generate image tag from commit SHA
+        id: tag
+        run: echo "tag=sha-${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Build image (local only — for scanning)
+        uses: docker/build-push-action@v5
+        with:
+          context: app/${{ matrix.component }}
+          push: false
+          load: true
+          tags: ghcr.io/${{ github.repository_owner }}/securechain-${{ matrix.component }}:${{ steps.tag.outputs.tag }}
+
+      - name: Trivy — Scan built image for CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/securechain-${{ matrix.component }}:${{ steps.tag.outputs.tag }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          format: table
+
+      - name: Push image to ghcr.io
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: app/${{ matrix.component }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/securechain-${{ matrix.component }}:${{ steps.tag.outputs.tag }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image with Cosign (keyless — no keys stored anywhere)
+        run: |
+          cosign sign --yes \
+            ghcr.io/${{ github.repository_owner }}/securechain-${{ matrix.component }}@${{ steps.push.outputs.digest }}
+
+      - name: Generate SBOM with Syft and attest to image
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/securechain-${{ matrix.component }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          artifact-name: sbom-${{ matrix.component }}.spdx.json

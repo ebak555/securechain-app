@@ -1,0 +1,36 @@
+name: 03 - GitOps Update
+
+on:
+  workflow_run:
+    workflows: ["02 - Build, Scan & Sign Images"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  update-gitops:
+    name: Update image tags in securechain-gitops
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout securechain-gitops
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/securechain-gitops
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+
+      - name: Update backend image tag
+        run: |
+          NEW_TAG="sha-${{ github.event.workflow_run.head_sha }}"
+          sed -i "s|tag:.*|tag: \"${NEW_TAG}\"|g" gitops/app/backend/values.yaml
+          sed -i "s|tag:.*|tag: \"${NEW_TAG}\"|g" gitops/app/frontend/values.yaml
+
+      - name: Commit and push updated image tags
+        run: |
+          cd gitops
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "chore: update image tags to sha-${{ github.event.workflow_run.head_sha }}"
+          git push
