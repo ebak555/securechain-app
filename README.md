@@ -47,13 +47,16 @@ Covers the full DevSecOps lifecycle: code scanning → image signing → policy 
                                │
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│          GKE CLUSTER  —  us-central1-a  —  e2-standard-2         │
-│                     1 node │ 2 vCPU │ 8GB RAM                    │
+│          GKE CLUSTER  —  us-central1-a  —  e2-standard-4         │
+│                     1 node │ 4 vCPU │ 16GB RAM                   │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  ARGOCD                                                   │   │
-│  │  Watches securechain-gitops every 3 minutes               │   │
-│  │  New image tag committed → rolling update triggered       │   │
+│  │  ARGOCD  (5 Applications — all GitOps managed)           │   │
+│  │  securechain      → app/ (backend + frontend + netpol)   │   │
+│  │  kyverno          → Helm: kyverno v3.8.1                 │   │
+│  │  kyverno-policies → security/kyverno/policies/           │   │
+│  │  falco            → Helm: falco v9.1.0 (modern_ebpf)     │   │
+│  │  monitoring       → Helm: kube-prometheus-stack v87.2.1  │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                             │                                    │
 │                             ▼                                    │
@@ -150,13 +153,25 @@ devsecops-prod/
     │   └── network-policies/
     │       ├── default-deny-all.yaml
     │       └── allow-frontend-to-backend.yaml
+    ├── argocd/
+    │   ├── application.yaml          securechain app (ArgoCD Application)
+    │   ├── kyverno.yaml              Kyverno Helm release (ArgoCD Application)
+    │   ├── kyverno-policies.yaml     Kyverno policies dir (ArgoCD Application)
+    │   ├── falco.yaml                Falco Helm release (ArgoCD Application)
+    │   └── monitoring.yaml           kube-prometheus-stack (ArgoCD Application)
+    ├── monitoring/
+    │   ├── values.yaml               Prometheus-stack values reference
+    │   └── grafana-dashboard.yaml    SecureChain dashboard (10 panels)
     └── security/
+        ├── falco/
+        │   └── values.yaml           Falco Helm values reference
         └── kyverno/
-            ├── block-latest-tag.yaml
-            ├── require-limits.yaml
-            ├── disallow-privileged.yaml
-            ├── require-labels.yaml
-            └── verify-image-signature.yaml
+            └── policies/
+                ├── block-latest-tag.yaml
+                ├── require-limits.yaml
+                ├── disallow-privileged.yaml
+                ├── require-labels.yaml
+                └── verify-image-signature.yaml
 ```
 
 ---
@@ -242,11 +257,17 @@ devsecops-prod/
    - Kyverno policy violation metrics
    - Falco alert metrics via Falcosidekick Prometheus exporter
    - Standard cluster metrics
-7. Build one custom Grafana dashboard with 4 panels:
-   - Kyverno policy violations by policy name (last 24h)
-   - Falco alerts by severity (last 1h)
-   - Policy-compliant pods as a percentage of total running pods
-   - ArgoCD deployment count (last 7 days)
+7. Build one custom Grafana dashboard with 10 panels:
+   - Falco alerts by severity — time series (last 1h)
+   - Total Falco events — stat
+   - Falco alerts by rule — pie chart
+   - Kyverno policy violations — time series
+   - Kyverno policy pass rate — gauge (%)
+   - Kyverno total violations — stat
+   - Pods running in securechain — stat
+   - ArgoCD deployments per app — time series (last 7d)
+   - ArgoCD total successful syncs — stat (last 7d)
+   - ArgoCD app health/sync status — table
 8. Wire Falcosidekick to send events to the Grafana webhook datasource for real-time alerts
 9. Write `scripts/demo.sh` — a script that triggers each violation type and shows the result
 10. Delete the GKE cluster after project is complete:
@@ -267,11 +288,11 @@ devsecops-prod/
 | Cluster name | securechain |
 | Zone | us-central1-a |
 | Node count | 1 |
-| Machine type | e2-standard-2 |
-| vCPU | 2 |
-| RAM | 8GB |
-| Disk | 50GB pd-balanced |
-| Estimated cost | ~$5 from $300 credit (3 days) |
+| Machine type | e2-standard-4 |
+| vCPU | 4 |
+| RAM | 16GB |
+| Disk | 100GB pd-balanced |
+| Estimated cost | ~$10 from $300 credit (3 days) |
 
 ---
 
