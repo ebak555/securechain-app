@@ -20,17 +20,17 @@ jobs:
           token: ${{ secrets.GITOPS_PAT }}
           path: gitops
 
-      - name: Update image tags
+      - name: Update image tags in deployment manifests
         run: |
           NEW_TAG="sha-${{ github.event.workflow_run.head_sha }}"
-          sed -i "s|tag:.*|tag: \"${NEW_TAG}\"|g" gitops/app/backend/values.yaml
-          sed -i "s|tag:.*|tag: \"${NEW_TAG}\"|g" gitops/app/frontend/values.yaml
+          sed -i "s|image: ghcr.io/${{ github.repository_owner }}/securechain-backend:.*|image: ghcr.io/${{ github.repository_owner }}/securechain-backend:${NEW_TAG}|" gitops/app/backend/deployment.yaml
+          sed -i "s|image: ghcr.io/${{ github.repository_owner }}/securechain-frontend:.*|image: ghcr.io/${{ github.repository_owner }}/securechain-frontend:${NEW_TAG}|" gitops/app/frontend/deployment.yaml
 
       - name: Commit and push updated image tags
         run: |
           cd gitops
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
+          git add app/backend/deployment.yaml app/frontend/deployment.yaml
           git diff --staged --quiet || git commit -m "chore: update image tags to sha-${{ github.event.workflow_run.head_sha }}"
           git push
